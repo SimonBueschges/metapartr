@@ -127,11 +127,28 @@ formula <-
   Taxa
 
 
-library(Rcpp)
-FEtree <- FEmrt(formula, vi = seTE, data = cbind(Method.Study.Data,"TE"= Model$TE,"seTE" = Model$seTE), c = 0)
-print(FEtree)
-summary(FEtree)
-plot(FEtree)
+Metapart <-
+  meta_partition(
+    model = Model,
+    moderators = c(
+      "Study.Type", "Sampling.Effort", "Patch.Area",
+      "Home.Range.(ha)", "Length.(cm)",  "Repro","Taxa"
+    ),
+    c = 1,
+    control = rpart.control(
+      xval = 10,
+      minbucket = 3,
+      minsplit = 6,
+      cp = 0.0001
+    )
+  )
+
+
+# library(Rcpp)
+# FEtree <- FEmrt(formula, vi = seTE, data = cbind(Method.Study.Data,"TE"= Model$TE,"seTE" = Model$seTE), c = 0)
+# print(FEtree)
+# summary(FEtree)
+# plot(FEtree)
 #
 # svg(filename = "graphics/Method.Study.Forest.svg",width =  12, height = 96)
 # Model %>%

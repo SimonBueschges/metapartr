@@ -1,5 +1,3 @@
-
-
 # Input meta object (metagen()) and a priori defined
 # moderators (vector of variable names)
 # Partition algorithm and options
@@ -8,68 +6,55 @@
 #
 # minimum number of studies to stop partitioning n.min = 8
 
-# Step 1
-
-# Test for homogeneity
-
-# Calculate Heterogeneity
 
 
-# Step 2: partition analysis
-
-# Second step consists of dividing the subset of effect sizes by the
-# moderator that explains the largest amount of variability between resulting subsets in relation
-# with variability within each of the potential subsets
-
-# classes will be the most homogeneous within them, while being the most heterogeneous
-# between them. The technique involves the partition of the sum of squares from the test of
-# homogeneity into two components
-
-
-# QH = QB + QW
-# in where:
-#   QB = sum_from_i=1_to_r of (theta_hat_i  - theta_hat)^2 * w_i
-# and
-#   QW = sum_from_i=1_to_r of  sum_from_j=1_to_k (theta_hat_ij  - theta_hat)^2 * w_ij
-
-# An indicator of importance of the each factor is the ratio of both
-# distances.
-
-
-#' Title
+#' Meta Partition
 #'
-#' @param model
-#' @param moderators
-#' @param c
-#' @param control
+#' Does Meta-Partition as discribed in ..
+#'
+#' @param model sdfs
+#' @param moderators sfssdf
+#' @param c sdfdf
+#' @param control sdf
 #' @param ...
 #'
 #' @return
+#' An object of class \code{c("metagen", "meta")} with corresponding
+#' \code{print}, \code{summary}, and \code{forest} functions. The
+#' object is a list containing the following components:
+#'
+#' \item{tau2}{Between-study variance \eqn{\tau^2}.}
+#' \item{se.tau2}{Standard error of \eqn{\tau^2}.}
+#' \item{lower.random.w, upper.random.w}{Lower and upper confidence
+#'   interval limits in subgroups (random effects model) - if
+#'   \code{byvar} is not missing.}
+#' \item{zval.random.w, pval.random.w}{z-value or t-value and
+#'   corresponding p-value for test of treatment effect in subgroups
+#'   (random effects model) - if \code{byvar} is not missing.}
+#'
+#'
+#' @examples
+#' data(Method.Study.Data)
+#' Model <-
+#'   meta::metacor(
+#'     ESr, n,
+#'     data = Method.Study.Data,
+#'     studlab = Study,
+#'     comb.random = FALSE
+#'   )
+#'
+#' @author Simon Büschges
+#'
+#' @references Ortega Z, Martín-Vallejo J, Mencía A,
+#' Galindo-Villardón MP, Pérez-Mellado V (2016)
+#' Introducing Meta-Partition, a Useful Methodology to
+#' Explore Factors That Influence Ecological Effect
+#' Sizes. PLoS ONE 11(7): e0158624. doi:10.1371/
+#'   journal.pone.0158624
+#'
+#'
 #' @export
 #'
-#' @examples data(Method.Study.Data)
-#'Model <-
-#'meta::metacor(
-#'ESr, n,
-#' data = Method.Study.Data,
-#' studlab = Study,
-#' comb.random = FALSE
-#' )
-Metapart <-
-  meta_partition(
-    model = Model,
-    moderators = c(
-      "Study.Type", "Sampling.Effort", "Patch.Area",
-      "Home.Range.(ha)", "Length.(cm)",  "Repro","Taxa"
-    ),
-    c = 1,
-    control = rpart.control(
-      xval = 10,
-      minbucket = 3,
-      minsplit = 6,
-      cp = 0.0001
-    )
-  )
 meta_partition <- function(model,
                            moderators,
                            n.to.small = 8,
@@ -80,21 +65,46 @@ meta_partition <- function(model,
                              minsplit = 6,
                              cp = 0.0001
                            )) {
-  browser()
+
   # Check arguments ---------------------------------------------------------
 
   # Needs to check model class to be "meta"
   assert_class(model, classes = "meta")
 
-  formula <- as.formula(
-    paste(
-      "TE ~",
+  # Needs to check that that is part of model
+  assert_data_frame(model$data)
+
+  # Needs to check that the moderators are part of the model data
+
+  assert_subset(moderators, names(model$data))
+
+
+  # Variable Definitions ----------------------------------------------------
+
+
+
+ # create formula for rpart
+  formula <-
+    as.formula(
       paste(
-        paste0("`",moderators, "`"), collapse = "+"
+        "TE ~",
+        paste(paste0("`", moderators, "`"), collapse = "+")
       )
     )
-  )
 
+  # define unique length of moderators
+  unique.length.moderators <-
+    vapply(
+      moderators,
+      FUN.VALUE = 1L,
+      function(x) {
+        length(unique(model$data[[x]]))
+      }
+    )
+
+  if (any(unique.length.moderators <= 1)) {
+    warning("moderator are only reasonable with more than one unique value")
+  }
 
   # Recursion ----------------------------------------------------------------
 
@@ -116,7 +126,7 @@ meta_partition <- function(model,
   model$Q # sum((Model$TE-Model$TE.fixed)^2 * 1/Model$seTE^2)
 
   # while
-  if(model$pval.Q < 0.1) {
+  if (model$pval.Q < 0.1) {
 
 
     # If the set of effect sizes showed a significant heterogeneity, we
@@ -169,6 +179,12 @@ meta_partition <- function(model,
     #
     # if it is nominal, all possible ways to combine the categories would
     # need to be evaluated;
+
+
+
+    Data.frame.Cutpoints <- heterogeneity_candidates(moderators, model, unique.length.moderators)
+
+
     # if it is ordinal, the combination of categories must preserve the
     # order in the data;
     # if the moderator is continuous, the algorithm finds the value that maximizes
@@ -217,20 +233,21 @@ meta_partition <- function(model,
     )
     # theta the pooled effect size in the total set of studies.
     # theta_i the pooled effect size in the -ith class
-    Q_B = sum(
-      sapply(1:i,
-             function(i){
-               (Models[[i]]$TE.fixed-model$TE.fixed)^2 * 1/Models[[i]]$seTE.fixed^2
-             }
+    Q_B <- sum(
+      sapply(
+        1:i,
+        function(i) {
+          (Models[[i]]$TE.fixed - model$TE.fixed)^2 * 1 / Models[[i]]$seTE.fixed^2
+        }
       )
     )
 
     # theta_ij is the effect size in the -jth study in the ith_class
-    Q_W = Model$Q - Q_B
+    Q_W <- Model$Q - Q_B
 
     # Ratio
     # 2 being the number of splits
-    (Q_B/(2-1))/(Q_W/nrow(Model$data)- 2)
+    (Q_B / (2 - 1)) / (Q_W / nrow(Model$data) - 2)
 
     # In each partition, this method will minimize the intraclass distance (QW) and so maximize the
     # interclass distance (QB). An indicator of importance of the each factor is the ratio of both
@@ -259,15 +276,12 @@ meta_partition <- function(model,
     # (5) The partition process will stop when all classes are homogeneous,
     # when they are final due to small sample size,
     # or if none of the moderator explains the heterogeneity
-
   }
 
 
 
-# Step 3: integrating effect sizes. ---------------------------------------
+  # Step 3: integrating effect sizes. ---------------------------------------
 
 
   list(Models, tree)
-
-
 }
