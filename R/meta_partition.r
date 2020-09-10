@@ -42,7 +42,6 @@
 #'     studlab = Study,
 #'     comb.random = FALSE
 #'   )
-#'
 #' @author Simon Büschges
 #'
 #' @references Ortega Z, Martín-Vallejo J, Mencía A,
@@ -59,13 +58,13 @@ meta_partition <- function(model,
                            moderators,
                            n.to.small = 8,
                            c = 1,
+                           auto = TRUE,
                            control = rpart.control(
                              xval = 10,
                              minbucket = 3,
                              minsplit = 6,
                              cp = 0.0001
                            )) {
-
   # Check arguments ---------------------------------------------------------
 
   # Needs to check model class to be "meta"
@@ -79,23 +78,25 @@ meta_partition <- function(model,
   assert_subset(moderators, names(model$data))
 
 
+  assert_logical(auto)
+
+
   # Variable Definitions ----------------------------------------------------
 
 
 
- # create formula for rpart
+  # create formula for rpart
   formula <-
-    as.formula(
-      paste(
-        "TE ~",
-        paste(paste0("`", moderators, "`"), collapse = "+")
-      )
-    )
+    as.formula(paste(
+      "TE ~",
+      paste(paste0(
+        "`", moderators, "`"
+      ), collapse = "+")
+    ))
 
   # define unique length of moderators
   unique.length.moderators <-
-    vapply(
-      moderators,
+    vapply(moderators,
       FUN.VALUE = 1L,
       function(x) {
         length(unique(model$data[[x]]))
@@ -103,8 +104,11 @@ meta_partition <- function(model,
     )
 
   if (any(unique.length.moderators <= 1)) {
-    warning("moderator are only reasonable with more than one unique value")
+    warning("moderators are only reasonable with more than one unique value")
   }
+
+  Nodes <- list(list(Parent = NA, Terminal.Node = FALSE, Model = model))
+  node.index <- 0
 
   # Recursion ----------------------------------------------------------------
 
@@ -122,20 +126,50 @@ meta_partition <- function(model,
   # model, for testing homogeneity.
 
   # Q_H is used to test homogeneity
-
-  model$Q # sum((Model$TE-Model$TE.fixed)^2 * 1/Model$seTE^2)
-
-  # while
-  if (model$pval.Q < 0.1) {
+  # sum((Model$TE-Model$TE.fixed)^2 * 1/Model$seTE^2)
 
 
+  while (node.index < length(Nodes)) {
     # If the set of effect sizes showed a significant heterogeneity, we
     # then calculated the amount of heterogeneity with I2
+    message(
+      paste(
+        "Partitioning\n",
+        "Q.H =",
+        round(Nodes[[node.index + 1]][["Model"]]$Q, 2),
+        ",",
+        "pval.Q.H =",
+        round(Nodes[[node.index + 1]][["Model"]]$pval.Q, 5),
+        "\n",
+        "I^2 =",
+        round(Nodes[[node.index + 1]][["Model"]]$I2, 2),
+        "\n",
+        "Sample.Size =",
+        Nodes[[node.index + 1]][["Model"]]$k
+      )
+    )
 
-    print(paste("Q_H =", model$Q, "I^2 =", model$I2))
-
-
-
+    if (auto == TRUE) {
+      if (Nodes[[node.index + 1]][["Model"]]$pval.Q < 0.1 &
+        Nodes[[node.index + 1]][["Model"]]$k > n.to.small) {
+        keep.partitioning <- TRUE
+      } else {
+        keep.partitioning <- FALSE
+      }
+    } else {
+      keep.partitioning <- NA
+      while (is.na(keep.partitioning)) {
+        answer <- readline("Keep Partitioning? y/n: ")
+        keep.partitioning <-
+          if (answer %in% c("y", "yes", "Y", "YES", "Yes", "TRUE", "T", 1)) {
+            TRUE
+          } else if (answer %in% c("n", "no", "N", "NO", "No", "FALSE", "F", 0)) {
+            FALSE
+          } else {
+            NA
+          }
+      }
+    }
 
 
     # > Step 2: partition analysis  ------------------------------------------
@@ -158,11 +192,8 @@ meta_partition <- function(model,
     # The method starts from a
     # set of M effect sizes and a set of moderators (X1, X2, . . ., Xp)
 
-    model$TE
-    moderators
-
-    M <- length(model$TE)
-    p <- length(moderators)
+    # M <- length(Nodes[[node.index +1]][["Model"]]$TE)
+    # p <- length(moderators)
 
     # The aim of the algorithm of partition is to find r disjoint
     # classes (m1, m2. . .mr) from the set of effect sizes such that the
@@ -181,10 +212,6 @@ meta_partition <- function(model,
     # need to be evaluated;
 
 
-
-    Data.frame.Cutpoints <- heterogeneity_candidates(moderators, model, unique.length.moderators)
-
-
     # if it is ordinal, the combination of categories must preserve the
     # order in the data;
     # if the moderator is continuous, the algorithm finds the value that maximizes
@@ -195,65 +222,120 @@ meta_partition <- function(model,
     # the response (effect size) between the levels of the moderator
 
 
-    # Data.tree <-
-    #   cbind(model$data, TE =  model$TE, wts =  1/model$seTE)
-    #
-    # tree <- rpart(
-    #   formula,
-    #   weights = wts,
-    #   data = Data.tree,
-    #   control = rpart.control(
-    #     xval = 10,
-    #     minbucket = 3,
-    #     minsplit = 6,
-    #     cp = 0.0001,
-    #     maxdepth = 1
-    #   )
-    # )
 
     # The technique involves the partition of the sum of squares from the test of
     # homogeneity into two components Q_H = Q_B + Q_W
 
-    Q_H <- model$Q
 
-    # Fit Model for the i - classes
-
-
-    split.var <- "Taxa"
-    i.classes <- list(
-      c("a", "r"),
-      c("m", "b")
-    )
-
-    Models <- lapply(
-      i.classes,
-      function(x) {
-        update.meta(Model, subset = with(Model$data, Taxa == "a"))
-      }
-    )
-    # theta the pooled effect size in the total set of studies.
-    # theta_i the pooled effect size in the -ith class
-    Q_B <- sum(
-      sapply(
-        1:i,
-        function(i) {
-          (Models[[i]]$TE.fixed - model$TE.fixed)^2 * 1 / Models[[i]]$seTE.fixed^2
-        }
-      )
-    )
-
-    # theta_ij is the effect size in the -jth study in the ith_class
-    Q_W <- Model$Q - Q_B
-
-    # Ratio
-    # 2 being the number of splits
-    (Q_B / (2 - 1)) / (Q_W / nrow(Model$data) - 2)
 
     # In each partition, this method will minimize the intraclass distance (QW) and so maximize the
     # interclass distance (QB). An indicator of importance of the each factor is the ratio of both
     # distances.
 
+    if (keep.partitioning) {
+      if (is.null(Nodes[[node.index + 1]][["Model"]]$subset)) {
+        subset <- rep(TRUE, Nodes[[node.index + 1]][["Model"]]$k)
+      } else {
+        subset <- Nodes[[node.index + 1]][["Model"]]$subset
+      }
 
+      moderator.length.more.than.one <-
+        vapply(
+          moderators, function(x) {
+            moderator <- Nodes[[node.index + 1]][["Model"]]$data[subset, ][[x]]
+            unique.moderator <- unique(moderator)
+            unique.length.moderator <- length(unique.moderator)
+            unique.length.moderator > 1
+          },
+          logical(1)
+        )
+
+      if (any(moderator.length.more.than.one)) {
+        Candidates <-
+          heterogeneity_candidates(
+            moderators = moderators,
+            model = Nodes[[node.index + 1]][["Model"]],
+            subset = subset,
+            node.index =node.index
+            )
+
+        Top.Candidates <- do.call(
+          "rbind",
+          lapply(
+            Candidates[["Combinations.tables"]],
+            function(x) {
+              Candidate.Combination.entry <- x[which.max(x$Q.B), ]
+              cbind(Split.ID = which.max(x$Q.B), Candidate.Combination.entry)
+            }
+          )
+        )
+
+        message("Top Results per Moderator:")
+
+        print(Top.Candidates[order(Top.Candidates$Q.B), ], digits = 4)
+
+        if (isTRUE(auto) | isFALSE(auto)) {
+          selected.moderator <-
+            row.names(Top.Candidates[which.max(Top.Candidates$Q.B), ])
+          selected.split <-
+            Top.Candidates[selected.moderator, "Split.ID"]
+
+
+          message(
+            paste0(
+              "Using the ",
+              selected.split,
+              "-th possible split of ",
+              selected.moderator,
+              " for the split"
+            )
+          )
+
+      } else {
+        # message(paste("Press enter to choose",
+        #               row.names(Top.Candidates[which.max(Top.Candidates$Q.B),]),
+        #               "for the split,\n or enter the name of a moderator to view their detailed results"
+        # )
+        # )
+        # split.moderator <- NA
+        # while (is.na(split.moderator)) {
+        #   answer <- readline("Keep Partitioning? y/n: ")
+        #   keep.partitioning <-
+        #     if (answer %in% c("y", "yes", "Y", "YES", "Yes", "TRUE", "T", 1)) {
+        #       TRUE
+        #     } else if (answer %in% c("n", "no", "N", "NO", "No", "FALSE", "F", 0)) {
+        #       FALSE
+        #     } else {
+        #       NA
+        #     }
+        # }
+      }
+
+
+      Nodes <-
+        append(
+          Nodes,
+          list(list(
+            Parent = node.index + 1,
+            Model = Candidates[["Models"]][[selected.moderator]][["Group.1"]][[selected.split]]
+          ))
+        )
+
+      Nodes <-
+        append(
+          Nodes,
+          list(list(
+            Parent = node.index + 1,
+            Model = Candidates[["Models"]][[selected.moderator]][["Group.2"]][[selected.split]]
+          ))
+        )
+      Nodes[[node.index + 1]][["Terminal.Node"]] <- FALSE
+      } else {
+        Nodes[[node.index + 1]][["Model"]] <- TRUE
+      }
+    } else {
+      Nodes[[node.index + 1]][["Terminal.Node"]] <- TRUE
+    }
 
     # (3) Testing if the classes obtained in the first partition are
     # homogeneous using QH and I2.
@@ -264,7 +346,7 @@ meta_partition <- function(model,
 
 
     # Then, step 2 will be repeated until we reach one of these three situations:
-    #   (1) to reach a subset of effect sizes that
+    # (1) to reach a subset of effect sizes that
     # is homogeneous under the fixed effect model,
     # (2) to reach a subset of effect sizes that is still heterogeneous
     # but that it is too small to keep partitioning, or
@@ -276,12 +358,16 @@ meta_partition <- function(model,
     # (5) The partition process will stop when all classes are homogeneous,
     # when they are final due to small sample size,
     # or if none of the moderator explains the heterogeneity
-  }
+
+    node.index <- node.index + 1
+
+    message(paste("Finished partitioning node", node.index, "\n\n"))
+  } # End while
 
 
 
   # Step 3: integrating effect sizes. ---------------------------------------
 
 
-  list(Models, tree)
+  Nodes
 }

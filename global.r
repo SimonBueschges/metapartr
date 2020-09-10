@@ -43,11 +43,16 @@ library(kableExtra)
 ##### >> Statistics ############################################################
 
 library(psych)
-library(meta)
 library(metafor)
+library(meta)
 
 
+library(metapartr)
 ##### > functions ##############################################################
+
+source("R/meta_partition.r", encoding = "UTF-8")
+
+source("R/heterogeneity_candidates.r", encoding = "UTF-8")
 
 ##### data import ##############################################################
 
@@ -114,7 +119,7 @@ Method.Study.Data <-
 ##### modeling #################################################################
 #
 Model <-
-  metacor(ESr, n, data = Method.Study.Data, studlab = Study,comb.random = FALSE)
+  metacor(ESr, n, data = Method.Study.Data, studlab = Study)
 
 formula <-
   TE ~
@@ -131,9 +136,13 @@ Metapart <-
   meta_partition(
     model = Model,
     moderators = c(
-      "Study.Type", "Sampling.Effort", "Patch.Area",
-      "Home.Range.(ha)", "Length.(cm)",  "Repro","Taxa"
+      "Study.Type", "Sampling.Effort",
+      "Patch.Area",
+      "Home.Range.(ha)", "Length.(cm)", "Repro",
+      "Taxa"
     ),
+    n.to.small = 8,
+    auto = TRUE,
     c = 1,
     control = rpart.control(
       xval = 10,
@@ -143,6 +152,7 @@ Metapart <-
     )
   )
 
+saveRDS(Metapart, "data/Metapart.rds")
 
 # library(Rcpp)
 # FEtree <- FEmrt(formula, vi = seTE, data = cbind(Method.Study.Data,"TE"= Model$TE,"seTE" = Model$seTE), c = 0)
@@ -186,3 +196,23 @@ Metapart <-
 #       dev.off()
 #     }
 #   )
+
+
+# a <- Metapart %>%
+#    sapply(function(x){
+#      if(is.null(x$Terminal.Node)){FALSE
+#        }else{
+#          x$Terminal.Node}
+#      })
+# A <- Metapart[a] %>% lapply(function(x){x[["Model"]]$subset})
+# b <- vector()
+# for(i in 1:27){
+#   b[A[[i]]] <- i
+# }
+#
+# svg(filename = paste0("graphics/Method.Study.Forest.method.svg"),
+#     width =  12,
+#     height = 96)
+# update.meta(Model, byvar = a) %>%
+#   forest.meta(sortvar = TE)
+# dev.off()

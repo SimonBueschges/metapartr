@@ -9,6 +9,7 @@ meta_partition(
   moderators,
   n.to.small = 8,
   c = 1,
+  auto = TRUE,
   control = rpart.control(xval = 10, minbucket = 3, minsplit = 6, cp = 1e-04)
 )
 }
@@ -24,7 +25,18 @@ meta_partition(
 \item{...}{}
 }
 \value{
+An object of class \code{c("metagen", "meta")} with corresponding
+\code{print}, \code{summary}, and \code{forest} functions. The
+object is a list containing the following components:
 
+\item{tau2}{Between-study variance \eqn{\tau^2}.}
+\item{se.tau2}{Standard error of \eqn{\tau^2}.}
+\item{lower.random.w, upper.random.w}{Lower and upper confidence
+  interval limits in subgroups (random effects model) - if
+  \code{byvar} is not missing.}
+\item{zval.random.w, pval.random.w}{z-value or t-value and
+  corresponding p-value for test of treatment effect in subgroups
+  (random effects model) - if \code{byvar} is not missing.}
 }
 \description{
 Does Meta-Partition as discribed in ..
@@ -38,7 +50,6 @@ Model <-
     studlab = Study,
     comb.random = FALSE
   )
-
 }
 \references{
 Ortega Z, Martín-Vallejo J, Mencía A,
@@ -47,4 +58,7 @@ Introducing Meta-Partition, a Useful Methodology to
 Explore Factors That Influence Ecological Effect
 Sizes. PLoS ONE 11(7): e0158624. doi:10.1371/
   journal.pone.0158624
+}
+\author{
+Simon Büschges
 }
