@@ -19,7 +19,7 @@
 #' @param ...
 #'
 #' @return
-#' An object of class \code{c("metagen", "meta")} with corresponding
+#' An object of class \code{"meta"} with corresponding
 #' \code{print}, \code{summary}, and \code{forest} functions. The
 #' object is a list containing the following components:
 #'
@@ -54,79 +54,48 @@
 #'
 #' @export
 #'
+#' @import stringr data.table checkmate
 meta_partition <- function(model,
                            moderators,
-                           n.to.small = 8,
-                           c = 1,
-                           auto = TRUE,
-                           control = rpart.control(
-                             xval = 10,
-                             minbucket = 3,
-                             minsplit = 6,
-                             cp = 0.0001
-                           )) {
+                           n.too.small = 8,
+                           auto = TRUE) {
   # Check arguments ---------------------------------------------------------
 
-  # Needs to check model class to be "meta"
+  # Check model class contains "meta"
   assert_class(model, classes = "meta")
-
   # Needs to check that that is part of model
   assert_data_frame(model$data)
-
   # Needs to check that the moderators are part of the model data
-
   assert_subset(moderators, names(model$data))
-
 
   assert_logical(auto)
 
 
-  # Variable Definitions ----------------------------------------------------
-
-
-
-  # create formula for rpart
-  formula <-
-    as.formula(paste(
-      "TE ~",
-      paste(paste0(
-        "`", moderators, "`"
-      ), collapse = "+")
-    ))
-
-  # define unique length of moderators
   unique.length.moderators <-
     vapply(moderators,
-      FUN.VALUE = 1L,
-      function(x) {
-        length(unique(model$data[[x]]))
-      }
-    )
+           FUN.VALUE = 1L,
+           function(x) {
+             length(unique(model$data[[x]]))
+           })
 
   if (any(unique.length.moderators <= 1)) {
     warning("moderators are only reasonable with more than one unique value")
   }
 
-  Nodes <- list(list(Parent = NA, Terminal.Node = FALSE, Model = model))
+  Nodes <- list(
+    list(
+      Parent = NA,
+      Terminal.Node = FALSE,
+      Model = model,
+      Combinations.tables = NA,
+      choosen.split = NA,
+      splits = ""
+    )
+  )
+
+  groups <- rep(NA, nrow(model$data))
+
   node.index <- 0
-
-  # Recursion ----------------------------------------------------------------
-
-  # The approach consists in assessing heterogeneity
-  # of a sample of effect sizes and partitioning this variability
-  # with an algorithm that finds the best moderator of each partition.
-
-
-
-  # > Step 1: study of heterogeneity ----------------------------------------
-
-
-  # step 1 is to test the initial hypothesis of
-  # one real effect size with the fixed effect
-  # model, for testing homogeneity.
-
-  # Q_H is used to test homogeneity
-  # sum((Model$TE-Model$TE.fixed)^2 * 1/Model$seTE^2)
 
 
   while (node.index < length(Nodes)) {
@@ -134,11 +103,11 @@ meta_partition <- function(model,
     # then calculated the amount of heterogeneity with I2
     message(
       paste(
-        "Partitioning\n",
-        "Q.H =",
+        "Evaluting Heterogeneity\n",
+        "Q.T =",
         round(Nodes[[node.index + 1]][["Model"]]$Q, 2),
         ",",
-        "pval.Q.H =",
+        "pval.Q.T =",
         round(Nodes[[node.index + 1]][["Model"]]$pval.Q, 5),
         "\n",
         "I^2 =",
@@ -151,7 +120,7 @@ meta_partition <- function(model,
 
     if (auto == TRUE) {
       if (Nodes[[node.index + 1]][["Model"]]$pval.Q < 0.1 &
-        Nodes[[node.index + 1]][["Model"]]$k > n.to.small) {
+          Nodes[[node.index + 1]][["Model"]]$k > n.too.small) {
         keep.partitioning <- TRUE
       } else {
         keep.partitioning <- FALSE
@@ -171,67 +140,6 @@ meta_partition <- function(model,
       }
     }
 
-
-    # > Step 2: partition analysis  ------------------------------------------
-
-
-
-    # Afterwards, we will try to explain
-    # this heterogeneity by the moderators
-    # that were established a priori in the design of meta-analysis.
-
-    # Second step consists of dividing the subset of effect sizes by the
-    # moderator that explains the largest amount
-    # of variability between resulting subsets in relation
-    # with variability within each of the potential subsets
-
-    # Thus, a partition method is proposed to explore the importance
-    # of each moderator on explaining heterogeneity. This partition
-    # is based on classification and regression trees
-
-    # The method starts from a
-    # set of M effect sizes and a set of moderators (X1, X2, . . ., Xp)
-
-    # M <- length(Nodes[[node.index +1]][["Model"]]$TE)
-    # p <- length(moderators)
-
-    # The aim of the algorithm of partition is to find r disjoint
-    # classes (m1, m2. . .mr) from the set of effect sizes such that the
-    # classes will be the most homogeneous within them,
-    # while being the most heterogeneous
-    # between them.
-
-
-    # The algorithm of this procedure is:
-    #
-    # (1) Looking for the lowest number of classes for each
-    # moderator that maximizes Q_B value (usually two).
-    # The combination of levels of the moderator will depend on the type of moderator:
-    #
-    # if it is nominal, all possible ways to combine the categories would
-    # need to be evaluated;
-
-
-    # if it is ordinal, the combination of categories must preserve the
-    # order in the data;
-    # if the moderator is continuous, the algorithm finds the value that maximizes
-    # the interclass distance, and splits the moderator into two groups
-    # regarding this value.
-
-    # (2) The first partition is chosen to maximize the difference in
-    # the response (effect size) between the levels of the moderator
-
-
-
-    # The technique involves the partition of the sum of squares from the test of
-    # homogeneity into two components Q_H = Q_B + Q_W
-
-
-
-    # In each partition, this method will minimize the intraclass distance (QW) and so maximize the
-    # interclass distance (QB). An indicator of importance of the each factor is the ratio of both
-    # distances.
-
     if (keep.partitioning) {
       if (is.null(Nodes[[node.index + 1]][["Model"]]$subset)) {
         subset <- rep(TRUE, Nodes[[node.index + 1]][["Model"]]$k)
@@ -240,15 +148,13 @@ meta_partition <- function(model,
       }
 
       moderator.length.more.than.one <-
-        vapply(
-          moderators, function(x) {
-            moderator <- Nodes[[node.index + 1]][["Model"]]$data[subset, ][[x]]
-            unique.moderator <- unique(moderator)
-            unique.length.moderator <- length(unique.moderator)
-            unique.length.moderator > 1
-          },
-          logical(1)
-        )
+        vapply(moderators, function(x) {
+          moderator <- Nodes[[node.index + 1]][["Model"]]$data[subset, ][[x]]
+          unique.moderator <- unique(moderator)
+          unique.length.moderator <- length(unique.moderator)
+          unique.length.moderator > 1
+        },
+        logical(1))
 
       if (any(moderator.length.more.than.one)) {
         Candidates <-
@@ -256,25 +162,21 @@ meta_partition <- function(model,
             moderators = moderators,
             model = Nodes[[node.index + 1]][["Model"]],
             subset = subset,
-            node.index =node.index
-            )
-
-        Top.Candidates <- do.call(
-          "rbind",
-          lapply(
-            Candidates[["Combinations.tables"]],
-            function(x) {
-              Candidate.Combination.entry <- x[which.max(x$Q.B), ]
-              cbind(Split.ID = which.max(x$Q.B), Candidate.Combination.entry)
-            }
+            node.index = node.index
           )
-        )
+
+        Top.Candidates <- do.call("rbind",
+                                  lapply(Candidates[["Combinations.tables"]],
+                                         function(x) {
+                                           Candidate.Combination.entry <- x[which.max(x$Q.B), ]
+                                           cbind(Split.ID = which.max(x$Q.B), Candidate.Combination.entry)
+                                         }))
 
         message("Top Results per Moderator:")
 
         print(Top.Candidates[order(Top.Candidates$Q.B), ], digits = 4)
 
-        if (isTRUE(auto) | isFALSE(auto)) {
+        if (isTRUE(auto)) {
           selected.moderator <-
             row.names(Top.Candidates[which.max(Top.Candidates$Q.B), ])
           selected.split <-
@@ -290,84 +192,133 @@ meta_partition <- function(model,
               " for the split"
             )
           )
+        } else {
+          repeat.message <- TRUE
 
+          while (isTRUE(repeat.message)) {
+            message(
+              "Select the moderator and Split.ID for the partition,
+            by typing the name followed by the Split.ID. To view the details of
+            a moderator type the name of the moderator followed
+                    by the word details:"
+            )
+
+            answer.selection <- readline("")
+
+            if (!str_detect(answer.selection,
+                            pattern = paste0(rownames(Top.Candidates), collapse = "|"))) {
+              message("Please type a valid moderator name")
+            } else{
+              if (!str_detect(answer.selection,
+                              pattern = paste0(c(
+                                "details",
+                                unique(unlist(
+                                  lapply(Candidates$Combinations.tables,
+                                         function(x) {
+                                           1:nrow(x)
+                                         }),
+                                  use.names = FALSE
+                                ))
+                              ),
+                              collapse = "|"))) {
+                message("Please type details or a valid Split.ID")
+              } else {
+                if(str_detect(answer.selection,
+                              pattern = "details"
+                )){
+                  lapply(names(Candidates$Combinations.tables),
+                         function(x){
+                           if(str_detect(answer.selection,
+                                         pattern = x
+                           )){
+                             print(Candidates$Combinations.tables[[x]])
+                           }
+                         }
+                         )
+                } else {
+
+                  selected.moderator <-
+                    str_extract(answer.selection, paste0(rownames(Top.Candidates), collapse = "|"))
+
+                  if (!str_detect(answer.selection,
+                                  pattern = paste0(
+                                    1:nrow(Candidates$Combinations.tables[[selected.moderator]]),
+                                  collapse = "|"))) {
+
+                    message("Please type a valid Split.ID")
+                  } else {
+
+                  selected.split <-
+                    as.numeric(
+                      str_extract(answer.selection, "[[:digit:]]+")
+                    )
+
+                  repeat.message <- FALSE
+
+
+                  message(
+                    paste0(
+                      "Using the ",
+                      selected.split,
+                      "-th possible split of ",
+                      selected.moderator,
+                      " for the split"
+                    )
+                  )
+                  }
+                }
+              }
+            }
+          }
+        }
+
+          Nodes <-
+            append(Nodes,
+                   list(
+                     list(
+                       Parent = node.index + 1,
+                       Model = Candidates[["Models"]][[selected.moderator]][["Group.1"]][[selected.split]],
+                       splits = paste(Nodes[[node.index + 1]][["splits"]],
+                                      "->",
+                                      selected.moderator,
+                                      Candidates[["Combinations.tables"]][[selected.moderator]][selected.split, ][["Group.1"]])
+                     )
+                   ))
+
+          Nodes <-
+            append(Nodes,
+                   list(
+                     list(
+                       Parent = node.index + 1,
+                       Model = Candidates[["Models"]][[selected.moderator]][["Group.2"]][[selected.split]],
+                       splits = paste(Nodes[[node.index + 1]][["splits"]],
+                                      "->",
+                                      selected.moderator,
+                                      Candidates[["Combinations.tables"]][[selected.moderator]][selected.split, ][["Group.2"]])
+                     )
+                   ))
+
+          Nodes[[node.index + 1]][["Terminal.Node"]] <- FALSE
+
+          Nodes[[node.index + 1]][["Combinations.tables"]] <-
+            Candidates$Combinations.tables
+
+          Nodes[[node.index + 1]][["choosen.split"]] <-
+            Candidates[["Combinations.tables"]][[selected.moderator]][selected.split, ]
+        } else {
+          Nodes[[node.index + 1]][["Model"]] <- TRUE
+        }
       } else {
-        # message(paste("Press enter to choose",
-        #               row.names(Top.Candidates[which.max(Top.Candidates$Q.B),]),
-        #               "for the split,\n or enter the name of a moderator to view their detailed results"
-        # )
-        # )
-        # split.moderator <- NA
-        # while (is.na(split.moderator)) {
-        #   answer <- readline("Keep Partitioning? y/n: ")
-        #   keep.partitioning <-
-        #     if (answer %in% c("y", "yes", "Y", "YES", "Yes", "TRUE", "T", 1)) {
-        #       TRUE
-        #     } else if (answer %in% c("n", "no", "N", "NO", "No", "FALSE", "F", 0)) {
-        #       FALSE
-        #     } else {
-        #       NA
-        #     }
-        # }
+        Nodes[[node.index + 1]][["Terminal.Node"]] <- TRUE
+        groups[Nodes[[node.index + 1]]$Model$subset] <-
+          node.index + 1
       }
 
 
-      Nodes <-
-        append(
-          Nodes,
-          list(list(
-            Parent = node.index + 1,
-            Model = Candidates[["Models"]][[selected.moderator]][["Group.1"]][[selected.split]]
-          ))
-        )
+      node.index <- node.index + 1
 
-      Nodes <-
-        append(
-          Nodes,
-          list(list(
-            Parent = node.index + 1,
-            Model = Candidates[["Models"]][[selected.moderator]][["Group.2"]][[selected.split]]
-          ))
-        )
-      Nodes[[node.index + 1]][["Terminal.Node"]] <- FALSE
-      } else {
-        Nodes[[node.index + 1]][["Model"]] <- TRUE
-      }
-    } else {
-      Nodes[[node.index + 1]][["Terminal.Node"]] <- TRUE
-    }
+      message(paste("Finished partitioning node", node.index, "\n\n"))
+    } # End while
 
-    # (3) Testing if the classes obtained in the first partition are
-    # homogeneous using QH and I2.
-
-    # (4) If any class is heterogeneous,
-    # then the step 2 will be repeated with the rest of moderators
-
-
-
-    # Then, step 2 will be repeated until we reach one of these three situations:
-    # (1) to reach a subset of effect sizes that
-    # is homogeneous under the fixed effect model,
-    # (2) to reach a subset of effect sizes that is still heterogeneous
-    # but that it is too small to keep partitioning, or
-    # (3) to reach a subset of effect sizes that is still heterogeneous
-    # but the considered moderators are not able to
-    # explain the heterogeneity in this subset.
-
-
-    # (5) The partition process will stop when all classes are homogeneous,
-    # when they are final due to small sample size,
-    # or if none of the moderator explains the heterogeneity
-
-    node.index <- node.index + 1
-
-    message(paste("Finished partitioning node", node.index, "\n\n"))
-  } # End while
-
-
-
-  # Step 3: integrating effect sizes. ---------------------------------------
-
-
-  Nodes
-}
+    list(Nodes = Nodes, groups = groups)
+  }

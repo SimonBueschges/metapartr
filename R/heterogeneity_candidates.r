@@ -180,7 +180,7 @@ heterogeneity_candidates <-
 
             # theta_ij is the effect size in the -jth study in the ith_class
             Combination.tables[[x]]$Q.W <-
-              Model$Q - Combination.tables[[x]]$Q.B
+              model$Q - Combination.tables[[x]]$Q.B
 
             Combination.tables[[x]]$pval.Q.B <-
               pchisq(Combination.tables[[x]]$Q.B, (2 - 1), lower.tail = FALSE)

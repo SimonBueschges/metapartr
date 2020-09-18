@@ -4,14 +4,7 @@
 \alias{meta_partition}
 \title{Meta Partition}
 \usage{
-meta_partition(
-  model,
-  moderators,
-  n.to.small = 8,
-  c = 1,
-  auto = TRUE,
-  control = rpart.control(xval = 10, minbucket = 3, minsplit = 6, cp = 1e-04)
-)
+meta_partition(model, moderators, n.too.small = 8, auto = TRUE)
 }
 \arguments{
 \item{model}{sdfs}
@@ -25,7 +18,7 @@ meta_partition(
 \item{...}{}
 }
 \value{
-An object of class \code{c("metagen", "meta")} with corresponding
+An object of class \code{"meta"} with corresponding
 \code{print}, \code{summary}, and \code{forest} functions. The
 object is a list containing the following components:
 
